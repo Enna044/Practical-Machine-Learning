@@ -1,0 +1,96 @@
+---
+title: "Practical Machine Learning"
+author: "Enna Martinez"
+date: "5/11/2020"
+output: html_document
+---
+
+## Background
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it.  
+
+The goal of this analysis is to predict the manner in which 6 participants did an exercise based on the data from accelerometers on the belt, forearm, arm, and dumbell. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways.
+
+## Data processing
+
+The data used for this project come from Human Activity Recognition (HAR). HAR has emerged as a key research area in the last years and is gaining increasing attention by the pervasive computing research community, especially for the development of context-aware systems. There are many potential applications for HAR, like: elderly monitoring, life log systems for monitoring energy expenditure and for supporting weight-loss programs, and digital assistants for weight lifting exercises. 
+
+The fisrt step is download the training and testing databases from the website.
+
+```{r data loading}
+library(caret)
+library(randomForest)
+
+train<-read.csv("pml-training.csv",row.names=1,na.strings = "")
+test<-read.csv("pml-testing.csv",row.names=1,na.strings = "NA")
+```
+
+Since the analysis is trying to predict the manner in which the participant will do the excercise, we need to get rid of the variables that have near zero variance in both data sets. Also, all columns with missing values should be removed to avoid issues and noise within our prediction model.
+
+```{r data cleansing}
+# Remove variables with near zero variance
+nearZ<-nearZeroVar(train,saveMetrics=TRUE)
+train<-train[,!nearZ$nzv]
+test<-test[,!nearZ$nzv]
+
+# Remove variables NA
+train<-train[,(colSums(is.na(train)) == 0)]
+test<-test[,(colSums(is.na(test)) == 0)]
+
+# Remove unnecessary columns
+cols_rm<-c("user_name","raw_timestamp_part_1","raw_timestamp_part_2","cvtd_timestamp","num_window")
+
+train<-train[,!(names(train) %in% cols_rm)]
+test<-test[,!(names(test) %in% c(cols_rm,"problem_id"))]
+
+train$classe<-as.factor(train$classe)
+```
+
+Once the data has been cleanse we need to separate the training data between training and validation sets.
+
+```{r training set}
+inTrain<-createDataPartition(y=train$classe, p=0.7, list=FALSE)
+training<-train[inTrain,]
+validation<-train[-inTrain,]
+```
+
+## Random Forest
+
+Due to the type of data, we will try to use a random forest to predict our model.
+
+```{r random}
+set.seed(1234)
+
+# Fit random forest model
+modFit<-randomForest(classe~.,data=training)
+val_pred<-predict(modFit, newdata=validation)
+```
+
+Once we have the model, it is necessary to perform some tests.
+
+```{r validation}
+# Check model performance
+confusionMatrix(val_pred,validation$classe)
+
+# Check important variable
+importance(modFit)
+varImpPlot(modFit, pch=19,col=1,cex=1,main = "Importance of the Predictors")
+```
+
+The random forest algorithm results in a model with accuracy 99.58%. The out-of-sample error is 0.42%, which is considered low, and therefore, it is not necessary to include more variables with NA or near zero variance.The top 4 most important variables according to the model fit are ‘roll_belt’, ‘yaw_belt’, ‘pitch_forearm’ and ‘magnet_dumbbell_z’.
+
+## Results
+
+The last step is to use the model to predict on the testing set.
+
+```{r testing}
+test_pred <- predict(modFit, newdata=test)
+write_results <- function(x) {
+        n <- length(x)
+        for (i in 1:n) {
+                filename <- paste0("problem_id", i, ".txt")
+                write.table(x[i], file=filename, quote=FALSE, row.names=FALSE,col.names=FALSE)
+        }
+}
+write_results(test_pred)
+```
